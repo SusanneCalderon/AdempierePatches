@@ -290,6 +290,8 @@ public class MHRProcess extends X_HR_Process implements DocAction , DocumentReve
 	public String completeIt()
 	{
 		//	Re-Check
+		if (!get_ValueAsBoolean("IsReCalculate"))
+			justPrepared = true;
 		if (!justPrepared)
 		{
 			String status = prepareIt();
