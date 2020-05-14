@@ -315,6 +315,9 @@ public class MInvoice extends X_C_Invoice implements DocAction , DocumentReversa
 		setDateAcct(getDateInvoiced());
 		//
 		setSalesRep_ID(order.getSalesRep_ID());
+		if(order.getC_SalesRegion_ID() != 0) {
+			setC_SalesRegion_ID(order.getC_SalesRegion_ID());
+		}
 		//
 		setC_BPartner_ID(order.getBill_BPartner_ID());
 		setC_BPartner_Location_ID(order.getBill_Location_ID());
@@ -494,6 +497,10 @@ public class MInvoice extends X_C_Invoice implements DocAction , DocumentReversa
 		setUser2_ID(order.getUser2_ID());
 		setUser3_ID(order.getUser3_ID());
 		setUser4_ID(order.getUser4_ID());
+		//	Set Sales Region
+		if(order.getC_SalesRegion_ID() != 0) {
+			setC_SalesRegion_ID(order.getC_SalesRegion_ID());
+		}
 	}	//	setOrder
 
 	/**
@@ -548,7 +555,10 @@ public class MInvoice extends X_C_Invoice implements DocAction , DocumentReversa
 			setC_BPartner_Location_ID(order.getBill_Location_ID());
 			// Overwrite Contact
 			setAD_User_ID(order.getBill_User_ID());
-			//
+			//	Set Sales Region
+			if(order.getC_SalesRegion_ID() != 0) {
+				setC_SalesRegion_ID(order.getC_SalesRegion_ID());
+			}
 		}
         // Check if Shipment/Receipt is based on RMA
         if (ship.getM_RMA_ID() != 0)
@@ -931,12 +941,39 @@ public class MInvoice extends X_C_Invoice implements DocAction , DocumentReversa
 				setC_Currency_ID(Env.getContextAsInt(getCtx(), "#C_Currency_ID"));
 		}
 
-		//	Sales Rep
-		if (getSalesRep_ID() == 0)
-		{
-			int ii = Env.getContextAsInt(getCtx(), "#SalesRep_ID");
-			if (ii != 0)
-				setSalesRep_ID (ii);
+		//	Set sales region
+		if(getC_SalesRegion_ID() == 0) {
+			if(getC_BPartner_Location_ID() != 0) {
+				MBPartnerLocation billLocation = (MBPartnerLocation) getC_BPartner_Location();
+				if(billLocation.getC_SalesRegion_ID() != 0) {
+					setC_SalesRegion_ID(billLocation.getC_SalesRegion_ID());
+				}
+			}
+		}
+		
+		//	Default Sales Rep
+		if (getSalesRep_ID() == 0) {
+			int salesRepresentativeId = 0;
+			MBPartner businessPartner = (MBPartner) getC_BPartner();
+			if(businessPartner.getSalesRep_ID() != 0) {
+				salesRepresentativeId = businessPartner.getSalesRep_ID();
+			}
+			//	for Sales Region
+			if(salesRepresentativeId == 0) {
+				if(getC_SalesRegion_ID() != 0) {
+					MSalesRegion salesRegion = MSalesRegion.getById(getCtx(), getC_SalesRegion_ID(), get_TrxName());
+					if(salesRegion.getSalesRep_ID() != 0) {
+						salesRepresentativeId = salesRegion.getSalesRep_ID();
+					}
+				}
+			}
+			//	
+			if(salesRepresentativeId == 0) {
+				salesRepresentativeId = Env.getContextAsInt(getCtx(), "#SalesRep_ID");
+			}
+			if(salesRepresentativeId != 0) {
+				setSalesRep_ID(salesRepresentativeId);
+			}
 		}
 
 		//	Document Type
@@ -1362,13 +1399,15 @@ public class MInvoice extends X_C_Invoice implements DocAction , DocumentReversa
 		//	Credit Status
 		if (isSOTrx() && !isReversal())
 		{
-			/*
-			 * MBPartner bp = new MBPartner (getCtx(), getC_BPartner_ID(), null); if
-			 * (MBPartner.SOCREDITSTATUS_CreditStop.equals(bp.getSOCreditStatus())) {
-			 * processMsg = "@BPartnerCreditStop@ - @TotalOpenBalance@=" +
-			 * bp.getTotalOpenBalance() + ", @SO_CreditLimit@=" + bp.getSO_CreditLimit();
-			 * return DocAction.STATUS_Invalid; }
-			 */}
+			MBPartner bp = new MBPartner (getCtx(), getC_BPartner_ID(), null);
+			if (MBPartner.SOCREDITSTATUS_CreditStop.equals(bp.getSOCreditStatus()))
+			{
+				processMsg = "@BPartnerCreditStop@ - @TotalOpenBalance@="
+					+ bp.getTotalOpenBalance()
+					+ ", @SO_CreditLimit@=" + bp.getSO_CreditLimit();
+				return DocAction.STATUS_Invalid;
+			}
+		}
 
 		//	Landed Costs
 		if (!isSOTrx())
@@ -1533,10 +1572,14 @@ public class MInvoice extends X_C_Invoice implements DocAction , DocumentReversa
 							.filter(invoiceLine -> invoiceLine.getC_Tax_ID() == taxParent.get_ID())
 							.forEach(invoiceLine -> {
 								//	BaseAmt
-								BigDecimal baseAmt = invoiceLine.getLineNetAmt();
+								BigDecimal baseAmt = getLineNetAmt(invoiceLine, taxChild);
 								taxBaseAmt.getAndUpdate(taxBaseAmount -> taxBaseAmount.add(baseAmt));
 								//	TaxAmt
-								BigDecimal amt = taxChild.calculateTax(baseAmt, isTaxIncluded(), getPrecision());
+								BigDecimal amt = Env.ZERO;
+								if (taxChild.get_ValueAsBoolean("isReferencedToStandardTax"))
+								amt = taxChild.calculateTax(baseAmt, false, getPrecision());
+								else
+									amt = taxChild.calculateTax(baseAmt, isTaxIncluded(), getPrecision());
 								if (amt == null)
 									amt = Env.ZERO;
 								if (!documentLevel && amt.signum() != 0)    //	manually entered
@@ -1549,9 +1592,11 @@ public class MInvoice extends X_C_Invoice implements DocAction , DocumentReversa
 							});
 
 					//	Calculate Tax
-					if (documentLevel || taxAmt.get().signum() == 0)
-						taxAmt.set(taxChild.calculateTax(taxBaseAmt.get(), isTaxIncluded(), getPrecision()));
-
+					Boolean isTaxIncluded = isTaxIncluded();
+					if (taxChild.get_ValueAsBoolean("isReferencedToStandardTax") && isTaxIncluded())
+						isTaxIncluded = false;
+					if (documentLevel || taxAmt.get().signum() == 0)						
+							taxAmt.set(taxChild.calculateTax(taxBaseAmt.get(), isTaxIncluded, getPrecision()));	
 					MInvoiceTax newITax = new MInvoiceTax(getCtx(), 0, get_TrxName());
 					newITax.setClientOrg(this);
 					newITax.setC_Invoice_ID(getC_Invoice_ID());
@@ -1560,15 +1605,16 @@ public class MInvoice extends X_C_Invoice implements DocAction , DocumentReversa
 					newITax.setIsTaxIncluded(isTaxIncluded());
 
 					//	Set Base
-					if (isTaxIncluded())
+					if (isTaxIncluded)
 						newITax.setTaxBaseAmt (taxBaseAmt.get().subtract(taxAmt.get()));
-					else
-						newITax.setTaxBaseAmt (taxBaseAmt.get());
+				else
+					newITax.setTaxBaseAmt (taxBaseAmt.get());
+
 
 					newITax.setTaxAmt(taxAmt.get());
 					newITax.saveEx(get_TrxName());
 					//
-					if (!isTaxIncluded())
+					if (!isTaxIncluded)
 						grandTotal.getAndUpdate(total -> total.add(taxAmt.get()));
 
 				});
@@ -1659,7 +1705,7 @@ public class MInvoice extends X_C_Invoice implements DocAction , DocumentReversa
 			if (MSysConfig.getBooleanValue("CASH_AS_PAYMENT", true, getAD_Client_ID()))
 			{
 				String error = payCashWithCashAsPayment();
-				if (error != null && error.length()>0)
+				if (error != null)
 					return error;
 			}
 			
@@ -1881,14 +1927,6 @@ public class MInvoice extends X_C_Invoice implements DocAction , DocumentReversa
 			}
 		}	//	project
 
-		//	User Validation
-		String valid = ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_AFTER_COMPLETE);
-		if (valid != null)
-		{
-			processMsg = valid;
-			return DocAction.STATUS_Invalid;
-		}
-
 		// Set the definite document number after completed (if needed)
 		setDefiniteDocumentNo();
 		// allocate prepaid Orders
@@ -1905,6 +1943,16 @@ public class MInvoice extends X_C_Invoice implements DocAction , DocumentReversa
 		for (MInvoiceLine invoiceLine:getLines()){
 		    generateCostDetail(invoiceLine);
         }
+
+		//	User Validation
+		saveEx();
+		String valid = ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_AFTER_COMPLETE);
+		if (valid != null)
+		{
+			processMsg = valid;
+			return DocAction.STATUS_Invalid;
+		}
+		
 		processMsg = info.toString().trim();
 		setProcessed(true);
 		setDocAction(DOCACTION_Close);
@@ -2557,6 +2605,20 @@ public class MInvoice extends X_C_Invoice implements DocAction , DocumentReversa
 				.setParameters(c_order_id)
 				.list();
 		return list;
+	}
+	
+	public BigDecimal getLineNetAmt (MInvoiceLine invoiceLine, MTax taxChild)	{
+		BigDecimal baseAmt = invoiceLine.getLineNetAmt();
+		if (taxChild.get_ValueAsBoolean("isReferencedToStandardTax") && isTaxIncluded()) {
+			MTax stdTax = new MTax (getCtx(), 
+					((MTaxCategory) invoiceLine.getProduct().getC_TaxCategory()).getDefaultTax().getC_Tax_ID(), 
+					get_TrxName());
+
+			BigDecimal taxStdAmt = (stdTax.calculateTax(baseAmt, isTaxIncluded(), getPrecision()));
+			baseAmt = baseAmt.subtract(taxStdAmt);
+		}
+		
+		return baseAmt;
 	}
 
 

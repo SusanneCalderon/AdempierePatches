@@ -54,20 +54,34 @@ public class MLandedCostAllocation extends X_C_LandedCostAllocation implements I
 	public static MLandedCostAllocation[] getOfInvoiceLine (Properties ctx, 
 		int C_InvoiceLine_ID, String trxName)
 	{
-		List<MLandedCostAllocation> list = new Query(Env.getCtx(), MLandedCostAllocation.Table_Name,
-				"C_InvoiceLine_ID=?", null)
-				.setParameters(C_InvoiceLine_ID)
-				.setOnlyActiveRecords(true)
-				.list();
-		/*
-		 * String sql = "SELECT * FROM C_LandedCostAllocation WHERE C_InvoiceLine_ID=?";
-		 * PreparedStatement pstmt = null; try { pstmt = DB.prepareStatement (sql,
-		 * trxName); pstmt.setInt (1, C_InvoiceLine_ID); ResultSet rs =
-		 * pstmt.executeQuery (); while (rs.next ()) list.add (new MLandedCostAllocation
-		 * (ctx, rs, trxName)); rs.close (); pstmt.close (); pstmt = null; } catch
-		 * (Exception e) { s_log.log (Level.SEVERE, sql, e); } try { if (pstmt != null)
-		 * pstmt.close (); pstmt = null; } catch (Exception e) { pstmt = null; }
-		 */
+		ArrayList<MLandedCostAllocation> list = new ArrayList<MLandedCostAllocation>();
+		String sql = "SELECT * FROM C_LandedCostAllocation WHERE C_InvoiceLine_ID=? and isactive = 'Y'";
+		PreparedStatement pstmt = null;
+		try
+		{
+			pstmt = DB.prepareStatement (sql, trxName);
+			pstmt.setInt (1, C_InvoiceLine_ID);
+			ResultSet rs = pstmt.executeQuery ();
+			while (rs.next ())
+				list.add (new MLandedCostAllocation (ctx, rs, trxName));
+			rs.close ();
+			pstmt.close ();
+			pstmt = null;
+		}
+		catch (Exception e)
+		{
+			s_log.log (Level.SEVERE, sql, e);
+		}
+		try
+		{
+			if (pstmt != null)
+				pstmt.close ();
+			pstmt = null;
+		}
+		catch (Exception e)
+		{
+			pstmt = null;
+		}
 		MLandedCostAllocation[] retValue = new MLandedCostAllocation[list.size ()];
 		list.toArray (retValue);
 		return retValue;
