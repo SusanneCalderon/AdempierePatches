@@ -1056,7 +1056,9 @@ public class MInvoiceLine extends X_C_InvoiceLine implements DocumentReversalLin
 					// end MZ
 					if (base.signum() != 0)
 					{
-						double result = getLineNetAmt().multiply(base).doubleValue();
+						BigDecimal multiplier = getParent().getC_DocTypeTarget().getDocBaseType().equals(MDocType.DOCBASETYPE_APInvoice)? Env.ONE:
+							Env.ONE.negate();
+						double result = getLineNetAmt().multiply(multiplier).multiply(base).doubleValue();
 						result /= total.doubleValue();
 						lca.setAmt(result, getPrecision());
 					}
@@ -1081,7 +1083,9 @@ public class MInvoiceLine extends X_C_InvoiceLine implements DocumentReversalLin
 				lca.setC_LandedCostType_ID(lc.getC_LandedCostType_ID());
 				BigDecimal base = iol.getBase(lc.getLandedCostDistribution()); 
 				lca.setBase(base);
-				lca.setAmt(getLineNetAmt());
+				BigDecimal multiplier = getParent().getC_DocTypeTarget().getDocBaseType().equals(MDocType.DOCBASETYPE_APInvoice)? Env.ONE:
+					Env.ONE.negate();
+				lca.setAmt(getLineNetAmt().multiply(multiplier));
 				// MZ Goodwill
 				// add set Qty from InOutLine
 				lca.setQty(iol.getMovementQty());
@@ -1096,7 +1100,9 @@ public class MInvoiceLine extends X_C_InvoiceLine implements DocumentReversalLin
 				MLandedCostAllocation lca = new MLandedCostAllocation (this, lc.getM_CostElement_ID());
 				lca.setM_Product_ID(lc.getM_Product_ID());	//	No ASI
 				lca.setC_LandedCostType_ID(lc.getC_LandedCostType_ID());
-				lca.setAmt(getLineNetAmt());
+				BigDecimal multiplier = getParent().getC_DocTypeTarget().getDocBaseType().equals(MDocType.DOCBASETYPE_APInvoice)? Env.ONE:
+					Env.ONE.negate();			
+				lca.setAmt(getLineNetAmt().multiply(multiplier));
 				if (lca.save())
 					return "";
 				return "Cannot save Product Allocation = " + lc;
@@ -1203,7 +1209,10 @@ public class MInvoiceLine extends X_C_InvoiceLine implements DocumentReversalLin
 				largestAmtAllocation = allocation;
 			allocationAmt = allocationAmt.add(allocation.getAmt());
 		}
-		BigDecimal difference = getLineNetAmt().subtract(allocationAmt);
+
+		BigDecimal multiplier = getParent().getC_DocTypeTarget().getDocBaseType().equals(MDocType.DOCBASETYPE_APInvoice)? Env.ONE:
+			Env.ONE.negate();			
+		BigDecimal difference = getLineNetAmt().multiply(multiplier).subtract(allocationAmt);
 		if (difference.signum() != 0)
 		{
 			largestAmtAllocation.setAmt(largestAmtAllocation.getAmt().add(difference));

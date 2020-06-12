@@ -17,6 +17,7 @@
 package org.compiere.model;
 
 import java.math.BigDecimal;
+import java.math.MathContext;
 import java.math.RoundingMode;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -42,7 +43,9 @@ public class MLandedCostAllocation extends X_C_LandedCostAllocation implements I
 	 * 
 	 */
 	private static final long serialVersionUID = -8645283018475474574L;
-
+	
+	private MInvoiceLine invoiceLine = null;
+	private MInvoice invoice = null;
 
 	/**
 	 * 	Get Cost Allocations for invoice Line
@@ -55,7 +58,7 @@ public class MLandedCostAllocation extends X_C_LandedCostAllocation implements I
 		int C_InvoiceLine_ID, String trxName)
 	{
 		ArrayList<MLandedCostAllocation> list = new ArrayList<MLandedCostAllocation>();
-		String sql = "SELECT * FROM C_LandedCostAllocation WHERE C_InvoiceLine_ID=? and isactive = 'Y'";
+		String sql = "SELECT * FROM C_LandedCostAllocation WHERE C_InvoiceLine_ID=?";
 		PreparedStatement pstmt = null;
 		try
 		{

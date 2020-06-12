@@ -860,6 +860,7 @@ public class Doc_Invoice extends Doc
 						costType.get_ID())).orElseGet(() -> BigDecimal.ZERO);
 				//cost to Cost Adjustment
 				BigDecimal costAdjustment = landedCostAllocation.getAmt().subtract(assetAmount);
+				setIsMultiCurrency(landedCostAllocation.getC_Currency_ID()!=as.getC_Currency_ID());
 				if (assetAmount.signum() != 0)
 				{
 					if (isDebit)
@@ -872,7 +873,6 @@ public class Doc_Invoice extends Doc
 					factLine.setDescription(desc + " " + landedCostAllocation.getM_CostElement().getName());
 					factLine.setM_Product_ID(landedCostAllocation.getM_Product_ID());
 				}
-				costAdjustment = costAdjustment.setScale(m_precision, BigDecimal.ROUND_HALF_UP);
 				if (costAdjustment.signum() != 0) {
 					if (isDebit)
 						debitAmount = costAdjustment;
