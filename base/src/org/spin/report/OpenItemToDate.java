@@ -20,6 +20,7 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 
 import org.compiere.util.DB;
+import org.compiere.util.Env;
 import org.compiere.util.Util;
 
 /**
@@ -111,9 +112,9 @@ public class OpenItemToDate extends OpenItemToDateAbstract {
 				+ "FROM RV_C_Invoice i "
 				+ "INNER JOIN C_PaymentTerm p ON (i.C_PaymentTerm_ID = p.C_PaymentTerm_ID) "
 				+ "WHERE invoiceOpenToDate(i.C_Invoice_ID, 0, ?) <> 0 "
-				+ "AND i.IsPayScheduleValid<>'Y' ");
-				//+ "AND i.DocStatus IN ('CO','CL') ")
-		
+				+ "AND (i.invoicecollectiontype is null or i.invoicecollectiontype not in ( 'H') ) "
+				+ "AND i.IsPayScheduleValid<>'Y' "
+				+ "AND i.processed = 'Y'  ");
 		//	Union
 		sql.append("UNION ");
 		//	With Payment Schedule
@@ -136,25 +137,27 @@ public class OpenItemToDate extends OpenItemToDateAbstract {
 				+ "INNER JOIN C_InvoicePaySchedule ips ON (i.C_Invoice_ID = ips.C_Invoice_ID)	"
 				+ "WHERE invoiceOpenToDate(i.C_Invoice_ID, ips.C_InvoicePaySchedule_ID, ? ) <> 0 "
 				+ "AND i.IsPayScheduleValid='Y' "
-				//+ "AND i.DocStatus IN ('CO','CL') "
-				+ "AND ips.IsValid='Y') i ");
+				+ "AND (i.invoicecollectiontype is null or i.invoicecollectiontype not in ( 'H')) "
+				+ "AND i.processed = 'Y'  "
+				+ "AND ips.IsValid='Y' ) i ");
 		//	Sales Order Transaction
 		sql.append("WHERE i.IsSOTrx = ").append(isSOTrx()? "'Y'": "'N'");
+		sql.append("AND i.AD_Client_ID= ").append(Env.getAD_Client_ID(getCtx()));
 		sql.append(whereClause);
 		//	
 		log.fine("SQL = " + sql.toString());
 		//	Prepare statement
 		PreparedStatement pstmtInsert = DB.prepareStatement (sql.toString(), get_TrxName());
 		int i = 1;
-		pstmtInsert.setTimestamp(i++, getDateTo());
-		pstmtInsert.setTimestamp(i++, getDateTo());
-		pstmtInsert.setTimestamp(i++, getDateTo());
-		pstmtInsert.setTimestamp(i++, getDateTo());
-		pstmtInsert.setTimestamp(i++, getDateTo());
-		pstmtInsert.setTimestamp(i++, getDateTo());
-		pstmtInsert.setTimestamp(i++, getDateTo());
-		pstmtInsert.setTimestamp(i++, getDateTo());
-		pstmtInsert.setTimestamp(i++, getDateTo());
+		pstmtInsert.setTimestamp(i++, getDateInvoicedTo());
+		pstmtInsert.setTimestamp(i++, getDateInvoicedTo());
+		pstmtInsert.setTimestamp(i++, getDateInvoicedTo());
+		pstmtInsert.setTimestamp(i++, getDateInvoicedTo());
+		pstmtInsert.setTimestamp(i++, getDateInvoicedTo());
+		pstmtInsert.setTimestamp(i++, getDateInvoicedTo());
+		pstmtInsert.setTimestamp(i++, getDateInvoicedTo());
+		pstmtInsert.setTimestamp(i++, getDateInvoicedTo());
+		pstmtInsert.setTimestamp(i++, getDateInvoicedTo());
 		//	Organization
 		if(getOrgId() != 0) {
 			pstmtInsert.setInt(i++, getOrgId());
@@ -191,12 +194,119 @@ public class OpenItemToDate extends OpenItemToDateAbstract {
 		if(getDateAcctTo() != null) {
 			pstmtInsert.setTimestamp(i++, getDateAcctTo());
 		}
-		//	Execute Query for insert
 		int noInserts = pstmtInsert.executeUpdate();
-		//	
 		log.fine((System.currentTimeMillis() - m_start) + " ms");
 		//	
+		insertOpenPayments();
 		return "@Created@ = " + noInserts;
 	}	//	doIt
+	
+	private void insertOpenPayments()  throws SQLException
+	{
+		StringBuffer sql = new StringBuffer();
+		StringBuffer whereClause = new StringBuffer();
+		//	Organization
+		if(getOrgId() != 0) {
+			whereClause.append(" AND p.AD_Org_ID = ?");
+		}
+		//	Business Partner Group
+		if(getBPGroupId() != 0) {
+			whereClause.append(" AND bp.C_BP_Group_ID = ?");
+		}
+		//	Business Partner
+		if(getBPartnerId() != 0) {
+			whereClause.append(" AND p.C_BPartner_ID = ?");
+		}
+		//	Document Type
+		
+		
+		//	Date Invoiced From
+		if(getDateInvoiced() != null) {
+			whereClause.append(" AND p.DateTrx >= ?");
+		}
+		//	Date Invoiced To
+		if(getDateInvoicedTo() != null) {
+			whereClause.append(" AND p.DateTrx  <= ?");
+		}
+		//	Accounting Date From
+		if(getDateAcct() != null) {
+			whereClause.append(" AND p.DateAcct >= ?");
+		}
+		//	Accounting Date To
+		if(getDateAcctTo() != null) {
+			whereClause.append(" AND p.DateAcct <= ?");
+		}
+		sql.append("INSERT INTO T_OpenItemToDate(AD_Org_ID, AD_Client_ID, DocumentNo, C_Invoice_ID, "
+				+ "C_Order_ID, C_BPartner_ID, IsSOTrx, DateInvoiced, "
+				+ "DateAcct, NetDays, DueDate, DaysDue, DiscountDate, "
+				+ "DiscountAmt, GrandTotal, PaidAmt, OpenAmt, "
+				+ "C_Currency_ID, C_ConversionType_ID, C_PaymentTerm_ID, "
+				+ "IsPayScheduleValid, C_InvoicePaySchedule_ID, InvoiceCollectionType, "
+				+ "C_Campaign_ID, C_Project_ID, C_Activity_ID, C_DocType_ID, DateTo, "
+				+ "AD_PInstance_ID, Created, Updated, CreatedBy, UpdatedBy) ");
+		sql.append("SELECT p.AD_Org_ID, p.AD_Client_ID,	"
+				+ "p.DocumentNo, null, p.C_Order_ID, p.C_BPartner_ID, p.Isreceipt, "
+				+ "p.datetrx, p.DateAcct, "
+				+ "null, "
+				+ "null AS DueDate, "
+				+ "null AS DaysDue, "
+				+ "null AS DiscountDate, "
+				+ "null AS DiscountAmt, "
+				+ "null as grandtotal, "
+				+ "p.payamt - paymentavailableToDate(c_Payment_ID, ?) as PaidAmt, "
+				+ "null AS OpenAmt, "
+				+ "p.C_Currency_ID, p.C_ConversionType_ID, "
+				+ "null as c_Paymentterm_ID, 'Y' as IsPayScheduleValid, "
+				+ "null AS C_InvoicePaySchedule_ID,  null as InvoiceCollectionType, "
+				+ "p.C_Campaign_ID, p.C_Project_ID, p.C_Activity_ID, p.C_DocType_ID, ?, ")
+				//	Instance, Created, Updated, CreatedBy, UpdatedBy
+		.append(getAD_PInstance_ID()).append(", getdate(), getdate(), ").append(getAD_User_ID()).append(", ").append(getAD_User_ID())
+		.append(" ")
+		.append( "	  from c_Payment_V p ")
+		.append( "	  INNER JOIN C_BPartner bp on p.C_BPartner_ID=bp.C_BPartner_ID ")
+		.append("     AND p.datetrx between ? and ?")
+		.append( "	  where paymentavailableToDate(c_Payment_ID, ?) <> 0")
+		.append(" AND p.isreceipt = ").append(isSOTrx()? "'Y'": "'N'")
+		.append(" AND p.AD_Client_ID=").append(Env.getAD_Client_ID(getCtx()));
+		sql.append(whereClause);
+		PreparedStatement pstmtInsert = DB.prepareStatement (sql.toString(), get_TrxName());
+		int i = 1;
+		pstmtInsert.setTimestamp(i++, getDateInvoicedTo());
+		pstmtInsert.setTimestamp(i++, getDateInvoicedTo());
+		pstmtInsert.setTimestamp(i++, getDateInvoicedTo());
+		pstmtInsert.setTimestamp(i++, getDateInvoicedTo());
+		pstmtInsert.setTimestamp(i++, getDateInvoicedTo());
+		//	Organization
+		if(getOrgId() != 0) {
+			pstmtInsert.setInt(i++, getOrgId());
+		}
+		//	Business Partner Group
+		if(getBPGroupId() != 0) {
+			pstmtInsert.setInt(i++, getBPGroupId());
+		}
+		//	Business Partner
+		if(getBPartnerId() != 0) {
+			pstmtInsert.setInt(i++, getBPartnerId());
+		}
+		//	Date Invoiced From
+		if(getDateInvoiced() != null) {
+			pstmtInsert.setTimestamp(i++, getDateInvoiced());
+		}
+		//	Date Invoiced To
+		if(getDateInvoicedTo() != null) {
+			pstmtInsert.setTimestamp(i++, getDateInvoicedTo());
+		}
+		//	Accounting Date From
+		if(getDateAcct() != null) {
+			pstmtInsert.setTimestamp(i++, getDateAcct());
+		}
+		//	Accounting Date To
+		if(getDateAcctTo() != null) {
+			pstmtInsert.setTimestamp(i++, getDateAcctTo());
+		}
+		//	Execute Query for insert
+		int noInserts = pstmtInsert.executeUpdate();
+
+	}
 
 }
